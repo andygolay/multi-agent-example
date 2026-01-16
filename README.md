@@ -1,73 +1,116 @@
-# React + TypeScript + Vite
+# Multi-Agent Transaction Example (Movement)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A minimal example demonstrating multi-agent transactions on Movement testnet using the Aptos wallet adapter with Nightly wallet.
 
-Currently, two official plugins are available:
+## Prerequisites
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Node.js
+- Nightly wallet browser extension (set to Movement testnet)
+- Two wallet addresses with testnet MOVE tokens
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## How It Works
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+This example demonstrates a 3-step multi-agent transaction flow where two signers must both sign a transaction:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Step 1: Create Transaction (First Sender)
+
+1. Connect your wallet (first signer)
+2. Click "Step 1: Create TX"
+3. Enter the second signer's address when prompted
+4. The transaction is built and serialized
+
+### Step 2: Sign (Second Sender)
+
+1. Disconnect first wallet
+2. Connect the second signer's wallet
+3. Click "Step 2: Sign"
+4. Approve the signature in your wallet
+5. The signature is captured and serialized
+
+### Step 3: Sign & Submit (First Sender)
+
+1. Disconnect second wallet
+2. Reconnect the first signer's wallet
+3. Click "Step 3: Sign & Submit"
+4. Approve the signature in your wallet
+5. Transaction is submitted to Movement testnet
+
+## Key Implementation Details
+
+### Wallet Provider Setup
+
+**Important:** Do NOT pass `dappConfig` to the wallet provider. Let the wallet handle network selection:
+
+```tsx
+<AptosWalletAdapterProvider
+  autoConnect={true}
+  optInWallets={["Nightly"]}
+  onError={(error) => console.error("Wallet error:", error)}
+>
 ```
+
+### Aptos Client Config
+
+Use `Network.CUSTOM` for Movement:
+
+```tsx
+const config = new AptosConfig({
+  network: Network.CUSTOM,
+  fullnode: "https://testnet.movementnetwork.xyz/v1",
+});
+const aptos = new Aptos(config);
+```
+
+### Building Multi-Agent Transactions
+
+```tsx
+const transaction = await aptos.transaction.build.multiAgent({
+  sender: AccountAddress.from(senderAddress),
+  secondarySignerAddresses: [AccountAddress.from(secondSignerAddress)],
+  data: {
+    bytecode,
+    functionArguments: [...],
+  },
+});
+```
+
+### Signing with Wallet Adapter
+
+```tsx
+const signature = await signTransaction({
+  transactionOrPayload: transaction,
+});
+```
+
+### Submitting with Wallet Adapter
+
+```tsx
+const tx = await submitTransaction({
+  transaction,
+  senderAuthenticator: senderSignature.authenticator,
+  additionalSignersAuthenticators: [secondSignerAuthenticator],
+});
+```
+
+## Common Issues
+
+### "Network custom not supported with Aptos wallet adapter"
+
+This error occurs when:
+- `dappConfig` is passed to `AptosWalletAdapterProvider` - remove it
+- Using SurfClient's submission methods instead of wallet adapter directly
+
+**Solution:** Use the wallet adapter's `signTransaction` and `submitTransaction` directly with raw transaction objects, not through wrapper libraries like SurfClient.
+
+## Files
+
+- `src/App.tsx` - Wallet provider setup
+- `src/MultiAgentTest.tsx` - Multi-agent transaction logic
+- `public/transfer_two_by_two.mv` - Compiled Move script
